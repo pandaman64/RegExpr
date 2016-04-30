@@ -65,40 +65,32 @@ fn parse_one<T: Iterator<Item = char>>(input: &mut T) -> Result<RegExpr, ParseEr
 }
 
 fn parse<T: Iterator<Item = char>>(input: &mut T) -> Result<RegExpr, ParseError> {
-    match parse_one(input) {
-        e @ Err(_) => e,
-        Ok(expr) => {
-            match input.next() {
-                Some('|') => {
-                    match parse(input) {
-                        Ok(rhs) => Ok(RegExpr::Branch(Box::new(expr), Box::new(rhs))),
-                        e @ Err(_) => e,
-                    }
-                }
-                Some('*') => {
-                    let expr = RegExpr::Repeation(Box::new(expr));
-                    match input.next() {
-                        Some(c) => {
-							match parse(&mut Some(c).into_iter().chain::<Box<Iterator<Item=char>>>(Box::new(input))){
-								Ok(rhs) => Ok(RegExpr::Sequence(Box::new(expr),Box::new(rhs))),
-								e @ Err(_) => e
-							}
-						}
-                        None => Ok(expr), 
-                    }
-                }
-                Some(c) => {
-                    match parse(&mut Some(c)
-                                         .into_iter()
-                                         .chain::<Box<Iterator<Item = char>>>(Box::new(input))) {
-                        Ok(rhs) => Ok(RegExpr::Sequence(Box::new(expr), Box::new(rhs))),
-                        e @ Err(_) => e,
-                    }
-                }
-                None => Ok(expr),
+    parse_one(input).and_then(|expr| {
+        match input.next() {
+            Some('|') => {
+                parse(input).and_then(|rhs| Ok(RegExpr::Branch(Box::new(expr), Box::new(rhs))))
             }
+            Some('*') => {
+                let expr = RegExpr::Repeation(Box::new(expr));
+                match input.next() {
+                    Some(c) => {
+                        parse(&mut Some(c)
+                                       .into_iter()
+                                       .chain::<Box<Iterator<Item = char>>>(Box::new(input)))
+                            .and_then(|rhs| Ok(RegExpr::Sequence(Box::new(expr), Box::new(rhs))))
+                    }
+                    None => Ok(expr),
+                }
+            }
+            Some(c) => {
+                parse(&mut Some(c)
+                               .into_iter()
+                               .chain::<Box<Iterator<Item = char>>>(Box::new(input)))
+                    .and_then(|rhs| Ok(RegExpr::Sequence(Box::new(expr), Box::new(rhs))))
+            }
+            None => Ok(expr),
         }
-    }
+    })
 }
 
 fn main() {
