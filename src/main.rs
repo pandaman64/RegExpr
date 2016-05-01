@@ -1,4 +1,9 @@
 use std::fmt;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::borrow::BorrowMut;
+use std::collections::HashSet;
 
 enum RegExpr {
     Character(char),
@@ -93,10 +98,157 @@ fn parse<T: Iterator<Item = char>>(input: &mut T) -> Result<RegExpr, ParseError>
     })
 }
 
+struct NodeAllocator {
+    new_id: usize,
+}
+
+impl NodeAllocator {
+    fn new() -> NodeAllocator {
+        NodeAllocator { new_id: 0 }
+    }
+
+    fn next_id(&mut self) -> usize {
+        let id = self.new_id;
+        self.new_id += 1;
+        id
+    }
+}
+
+struct Node {
+    id: usize,
+    successors: HashMap<Option<char>, Vec<Rc<RefCell<Node>>>>,
+}
+
+impl Node {
+    fn new(alloc: &mut NodeAllocator) -> Node {
+        Node {
+            id: alloc.next_id(),
+            successors: HashMap::new(),
+        }
+    }
+
+    fn traverse<F>(&self, f: &Box<F>, visited: &mut HashSet<usize>)
+        where F: Fn(&Self)
+    {
+        if visited.contains(&self.id) {
+            return;
+        }
+
+        f(&self);
+
+        visited.insert(self.id);
+
+        for (_, nodes) in &self.successors {
+            for node in nodes {
+                node.borrow().traverse(&f, visited);
+            }
+        }
+    }
+}
+
+struct Graph {
+    start: Rc<RefCell<Node>>,
+    end: Rc<RefCell<Node>>,
+}
+
+impl Graph {
+    fn concatenated(self, other: Graph) -> Graph {
+        (*self.end).borrow_mut().successors.entry(None).or_insert(vec![]).push(other.start);
+        Graph {
+            start: self.start.clone(),
+            end: other.end.clone(),
+        }
+    }
+
+    fn dotty_print(&self) {
+        let mut visited = HashSet::new();
+
+        println!("digraph g{{");
+
+        self.start.borrow().traverse(&Box::new(|this: &Node| {
+                                         for (condition, nodes) in &this.successors {
+                                             for node in nodes {
+                                                 if let &Some(c) = condition {
+                                                     println!("\t{} -> {} [ label = \"{}\" ];",
+                                                              this.id,
+                                                              node.borrow().id,
+                                                              c);
+                                                 } else {
+                                                     println!("\t{} -> {} [ label = \"ε\" ];",
+                                                              this.id,
+                                                              node.borrow().id);
+                                                 }
+                                             }
+                                         }
+                                     }),
+                                     &mut visited);
+
+        println!("}}");
+    }
+}
+
+fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
+    // All subgraphs must end with Graph::end
+    match *expr {
+        RegExpr::Character(c) => {
+            let end = Rc::new(RefCell::new(Node::new(alloc)));
+            let mut start = Node::new(alloc);
+            start.successors.insert(Some(c), vec![end.clone()]);
+            Graph {
+                start: Rc::new(RefCell::new(start)),
+                end: end,
+            }
+        }
+        RegExpr::Sequence(ref car, ref cdr) => {
+            let car = build_nfa(&car, alloc);
+            let cdr = build_nfa(&cdr, alloc);
+            let intermediate = car.concatenated(cdr);
+            intermediate
+        }
+        RegExpr::Branch(ref lhs, ref rhs) => {
+            let end = Rc::new(RefCell::new(Node::new(alloc)));
+            let mut start = Node::new(alloc);
+            let lhs = build_nfa(&lhs, alloc);
+            let rhs = build_nfa(&rhs, alloc);
+            start.successors.insert(None, vec![lhs.start.clone(), rhs.start.clone()]);
+            (*lhs.end).borrow_mut().successors.entry(None).or_insert(vec![]).push(end.clone());
+            (*rhs.end).borrow_mut().successors.entry(None).or_insert(vec![]).push(end.clone());
+
+            Graph {
+                start: Rc::new(RefCell::new(start)),
+                end: end,
+            }
+        }
+        RegExpr::Range(ref range) => {
+            let end = Rc::new(RefCell::new(Node::new(alloc)));
+            let mut start = Node::new(alloc);
+            for c in range {
+                start.successors.insert(Some(*c), vec![end.clone()]);
+            }
+            Graph {
+                start: Rc::new(RefCell::new(start)),
+                end: end,
+            }
+        }
+        RegExpr::Repeation(ref expr) => {
+            let intermediate = build_nfa(&expr, alloc);
+            (*intermediate.end)
+                .borrow_mut()
+                .successors
+                .entry(None)
+                .or_insert(vec![])
+                .push(intermediate.start.clone());
+
+            intermediate
+        }
+    }
+}
+
 fn main() {
     let input = "a*i(u|e)*o".to_owned();
     let expression = parse(&mut input.chars());
 
-    println!("{}", input);
-    println!("{:?}", expression);
+    let mut alloc = NodeAllocator::new();
+    let nfa = build_nfa(&expression.unwrap(), &mut alloc);
+    nfa.dotty_print();
 }
