@@ -232,6 +232,12 @@ fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
         }
         RegExpr::Repeation(ref expr) => {
             let intermediate = build_nfa(&expr, alloc);
+            (*intermediate.start)
+                .borrow_mut()
+                .successors
+                .entry(None)
+                .or_insert(vec![])
+                .push(intermediate.end.clone());
             (*intermediate.end)
                 .borrow_mut()
                 .successors
