@@ -114,9 +114,14 @@ impl NodeAllocator {
     }
 }
 
+trait Traversable {
+    fn traverse<F>(&self, f: &mut F, visited: &mut HashSet<usize>) where F: FnMut(&Self);
+}
+
 struct Node {
     id: usize,
     successors: HashMap<Option<char>, Vec<Rc<RefCell<Node>>>>,
+    is_end: bool,
 }
 
 impl Node {
@@ -124,11 +129,52 @@ impl Node {
         Node {
             id: alloc.next_id(),
             successors: HashMap::new(),
+            is_end: false,
         }
     }
 
-    fn traverse<F>(&self, f: &Box<F>, visited: &mut HashSet<usize>)
-        where F: Fn(&Self)
+    fn new_with_end(is_end: bool, alloc: &mut NodeAllocator) -> Node {
+        Node {
+            id: alloc.next_id(),
+            successors: HashMap::new(),
+            is_end: is_end,
+        }
+    }
+
+    fn dotty_print(&self) {
+        let mut visited = HashSet::new();
+
+        println!("digraph g{{");
+
+        self.traverse(&mut |this: &Node| {
+                          for (condition, nodes) in &this.successors {
+                              for node in nodes {
+                                  if let &Some(c) = condition {
+                                      print!("\t{} -> {} [ label = \"{}\"",
+                                             this.id,
+                                             node.borrow().id,
+                                             c);
+                                  } else {
+                                      print!("\t{} -> {} [ label = \"ε\"",
+                                             this.id,
+                                             node.borrow().id);
+                                  }
+                                  if this.is_end {
+                                      print!(", style = \"bold\"");
+                                  }
+                                  println!("];");
+                              }
+                          }
+                      },
+                      &mut visited);
+
+        println!("}}");
+    }
+}
+
+impl Traversable for Node {
+    fn traverse<F>(&self, f: &mut F, visited: &mut HashSet<usize>)
+        where F: FnMut(&Self)
     {
         if visited.contains(&self.id) {
             return;
@@ -140,7 +186,27 @@ impl Node {
 
         for (_, nodes) in &self.successors {
             for node in nodes {
-                node.borrow().traverse(&f, visited);
+                node.borrow().traverse(f, visited);
+            }
+        }
+    }
+}
+
+impl Traversable for Rc<RefCell<Node>> {
+    fn traverse<F>(&self, f: &mut F, visited: &mut HashSet<usize>)
+        where F: FnMut(&Self)
+    {
+        if visited.contains(&self.borrow().id) {
+            return;
+        }
+
+        f(&self);
+
+        visited.insert(self.borrow().id);
+
+        for (_, nodes) in &self.borrow().successors {
+            for node in nodes {
+                node.traverse(f, visited);
             }
         }
     }
@@ -161,29 +227,7 @@ impl Graph {
     }
 
     fn dotty_print(&self) {
-        let mut visited = HashSet::new();
-
-        println!("digraph g{{");
-
-        self.start.borrow().traverse(&Box::new(|this: &Node| {
-                                         for (condition, nodes) in &this.successors {
-                                             for node in nodes {
-                                                 if let &Some(c) = condition {
-                                                     println!("\t{} -> {} [ label = \"{}\" ];",
-                                                              this.id,
-                                                              node.borrow().id,
-                                                              c);
-                                                 } else {
-                                                     println!("\t{} -> {} [ label = \"ε\" ];",
-                                                              this.id,
-                                                              node.borrow().id);
-                                                 }
-                                             }
-                                         }
-                                     }),
-                                     &mut visited);
-
-        println!("}}");
+        self.start.borrow().dotty_print();
     }
 }
 
@@ -250,6 +294,47 @@ fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
     }
 }
 
+fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node>> {
+    let mut indexer: HashMap<usize, Rc<RefCell<Node>>> = HashMap::new();
+
+    graph.start.traverse(&mut |this: &Rc<RefCell<Node>>|{
+        println!("reached id: {}, is_end: {}",this.borrow().id,this.borrow().is_end);
+        indexer.insert(this.borrow().id,Rc::new(RefCell::new(Node::new_with_end(this.borrow().is_end,alloc))));
+    },&mut HashSet::new());
+
+    graph.start.traverse(&mut |this: &Rc<RefCell<Node>>|{
+        for (condition, successors) in &this.borrow().successors{
+            for successor in successors{
+                match condition{
+                    &Some(c) => {
+                        (*indexer[&this.borrow().id]).borrow_mut()
+                            .successors.entry(Some(c)).or_insert(vec![])
+                            .push(indexer[&successor.borrow().id].clone());
+                    }
+                    &None => {
+                        let mut joined_successors: HashMap<Option<char>,Vec<Rc<RefCell<Node>>>> = HashMap::new();
+                        {
+                            let joined_mut = joined_successors.borrow_mut();
+                            for (c,succs) in &indexer[&successor.borrow().id].borrow().successors{
+                                for succ in succs{
+                                    joined_mut.entry(*c).or_insert(vec![]).push(succ.clone());
+                                }
+                            }
+                        }
+                        (*indexer[&this.borrow().id]).borrow_mut().successors.extend(joined_successors);
+                        if indexer[&successor.borrow().id].borrow().is_end {
+                            (*indexer[&this.borrow().id]).borrow_mut().is_end = true;
+                        }
+                        *indexer.get_mut(&successor.borrow().id).unwrap() = indexer[&this.borrow().id].clone();
+                    }
+                }
+            }
+        }
+    },&mut HashSet::new());
+
+    indexer[&graph.start.borrow().id].clone()
+}
+
 fn main() {
     let input = "a*i(u|e)*o".to_owned();
     let expression = parse(&mut input.chars());
@@ -257,4 +342,8 @@ fn main() {
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
     nfa.dotty_print();
+
+    (*nfa.end).borrow_mut().is_end = true;
+    let merged = merge_by_epsilon(&nfa, &mut alloc);
+    merged.borrow().dotty_print();
 }
