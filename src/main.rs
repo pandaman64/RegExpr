@@ -336,15 +336,15 @@ fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node
 }
 
 fn main() {
-    use std::io::stdout;
+    use std::fs::File;
     let input = "(ab)*".to_owned();
     let expression = parse(&mut input.chars());
 
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
-    nfa.dotty_print(&mut stdout());
+    nfa.dotty_print(&mut File::create("nfa.dot").unwrap());
 
     (*nfa.end).borrow_mut().is_end = true;
     let merged = merge_by_epsilon(&nfa, &mut alloc);
-    merged.borrow().dotty_print(&mut stdout());
+    merged.borrow().dotty_print(&mut File::create("dfa.dot").unwrap());
 }
