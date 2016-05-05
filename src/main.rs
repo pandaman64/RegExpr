@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::borrow::BorrowMut;
 use std::collections::HashSet;
+use std::io::Write;
 
 enum RegExpr {
     Character(char),
@@ -141,34 +142,33 @@ impl Node {
         }
     }
 
-    fn dotty_print(&self) {
+    fn dotty_print<W: Write + ?Sized>(&self,writer: &mut W) {
         let mut visited = HashSet::new();
 
-        println!("digraph g{{");
+        writeln!(writer,"digraph g{{").unwrap();
 
         self.traverse(&mut |this: &Node| {
+                          if this.is_end{
+                              writeln!(writer,"{} [ style = \"bold\" ];",this.id).unwrap();
+                          }
                           for (condition, nodes) in &this.successors {
                               for node in nodes {
                                   if let &Some(c) = condition {
-                                      print!("\t{} -> {} [ label = \"{}\"",
+                                      writeln!(writer,"\t{} -> {} [ label = \"{}\" ];",
                                              this.id,
                                              node.borrow().id,
-                                             c);
+                                             c).unwrap();
                                   } else {
-                                      print!("\t{} -> {} [ label = \"ε\"",
+                                      writeln!(writer,"\t{} -> {} [ label = \"ε\" ];",
                                              this.id,
-                                             node.borrow().id);
+                                             node.borrow().id).unwrap();
                                   }
-                                  if this.is_end {
-                                      print!(", style = \"bold\"");
-                                  }
-                                  println!("];");
                               }
                           }
                       },
                       &mut visited);
 
-        println!("}}");
+        writeln!(writer,"}}").unwrap();
     }
 }
 
@@ -226,8 +226,8 @@ impl Graph {
         }
     }
 
-    fn dotty_print(&self) {
-        self.start.borrow().dotty_print();
+    fn dotty_print<W: Write + ?Sized>(&self,writer: &mut W) {
+        self.start.borrow().dotty_print(writer);
     }
 }
 
@@ -336,14 +336,15 @@ fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node
 }
 
 fn main() {
-    let input = "a*i(u|e)*o".to_owned();
+    use std::io::stdout;
+    let input = "(ab)*".to_owned();
     let expression = parse(&mut input.chars());
 
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
-    nfa.dotty_print();
+    nfa.dotty_print(&mut stdout());
 
     (*nfa.end).borrow_mut().is_end = true;
     let merged = merge_by_epsilon(&nfa, &mut alloc);
-    merged.borrow().dotty_print();
+    merged.borrow().dotty_print(&mut stdout());
 }
