@@ -302,9 +302,11 @@ fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node
         indexer.insert(this.borrow().id,Rc::new(RefCell::new(Node::new_with_end(this.borrow().is_end,alloc))));
     },&mut HashSet::new());
 
+    let mut count = 0;
     graph.start.traverse(&mut |this: &Rc<RefCell<Node>>|{
         for (condition, successors) in &this.borrow().successors{
             for successor in successors{
+                println!("edge ({:?}) -> {}", condition, successor.borrow().id);
                 match condition{
                     &Some(c) => {
                         (*indexer[&this.borrow().id]).borrow_mut()
@@ -330,6 +332,11 @@ fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node
                 }
             }
         }
+        count += 1;
+        println!("iter{} reached",count);
+    use std::fs::File;
+    use std::io::Write;
+        indexer[&graph.start.borrow().id].borrow().dotty_print(&mut File::create(format!("iter{}.dot",count)).unwrap());
     },&mut HashSet::new());
 
     indexer[&graph.start.borrow().id].clone()
@@ -337,14 +344,14 @@ fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Rc<RefCell<Node
 
 fn main() {
     use std::fs::File;
-    let input = "(ab)*".to_owned();
+    let input = "(a|bc)*d".to_owned();
     let expression = parse(&mut input.chars());
 
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
+    (*nfa.end).borrow_mut().is_end = true;
     nfa.dotty_print(&mut File::create("nfa.dot").unwrap());
 
-    (*nfa.end).borrow_mut().is_end = true;
     let merged = merge_by_epsilon(&nfa, &mut alloc);
     merged.borrow().dotty_print(&mut File::create("dfa.dot").unwrap());
 }
