@@ -13,9 +13,9 @@ fn main() {
 
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
-    (*nfa.end).borrow_mut().is_end = true;
     nfa.dotty_print(&mut File::create("nfa.dot").unwrap());
+    // nfa.dotty_print(&mut std::io::stdout());
 
     let merged = merge_by_epsilon(&nfa, &mut alloc);
-    merged.borrow().dotty_print(&mut File::create("dfa.dot").unwrap());
+    merged.dotty_print(&mut File::create("dfa.dot").unwrap());
 }
