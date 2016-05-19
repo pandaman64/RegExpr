@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::collections::BTreeSet;
 use std::io::Write;
 
@@ -100,6 +101,23 @@ impl Graph {
 
         for edge in self.edges.iter().filter(|edge| edge.from == *current) {
             self.traverse(f, &edge.to, visited);
+        }
+    }
+
+    fn traverse_node<F: FnMut(&Node)>(&self,
+                                      f: &mut F,
+                                      current: &Node,
+                                      visited: &mut HashSet<Node>) {
+        if visited.contains(current) {
+            return;
+        }
+
+        visited.insert(*current);
+
+        f(current);
+
+        for edge in self.edges.iter().filter(|edge| edge.from == *current) {
+            self.traverse_node(f, &edge.to, visited);
         }
     }
 }
@@ -214,63 +232,74 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
     }
 }
 
+fn reachable_through_epsilon(through_epsilon: &HashMap<Node, HashSet<Node>>,
+                             current: &Node,
+                             visited: &mut HashSet<Node>)
+                             -> HashSet<Node> {
+    if visited.contains(current) {
+        return HashSet::new();
+    }
+
+    visited.insert(*current);
+
+    if let Some(nodes) = through_epsilon.get(current) {
+        let mut accumulator: HashSet<Node> = nodes.clone();
+        for to in nodes.iter() {
+            let extension = reachable_through_epsilon(through_epsilon, to, visited);
+            accumulator.extend(extension);
+        }
+
+        accumulator
+    } else {
+        HashSet::new()
+    }
+}
+
 pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
-    //assume (a,b) is arranged in dictionary order where a is compared first.
-    let epsilon_edges: BTreeSet<(Node,Node)> = graph.edges.iter().filter(|edge| edge.condition.is_none()).map(|edge| (edge.from,edge.to)).collect();
+    let mut successors_through_epsilon: HashMap<Node, HashSet<Node>> = HashMap::new();
+    let mut successors_through_non_epsilon: HashMap<Node, HashSet<(char, Node)>> = HashMap::new();
 
-    let dfa = Graph{
-        start: Node::new(alloc),
-        edges: HashSet::new(),
-        acceptors: vec![],
-    };
+    for edge in &graph.edges {
+        match edge.condition {
+            None => {
+                successors_through_epsilon.entry(edge.from)
+                                          .or_insert(HashSet::new())
+                                          .insert(edge.to);
+            }
+            Some(c) => {
+                successors_through_non_epsilon.entry(edge.from)
+                                              .or_insert(HashSet::new())
+                                              .insert((c, edge.to));
+            }
+        }
+    }
 
-    graph.traverse(&mut |edge| {
-                
-    },graph.start,HashSet::new());
-    unimplemented!()
-    // let mut indexer: HashMap<usize, Rc<RefCell<Node>>> = HashMap::new();
-    //
-    // graph.start.traverse(&mut |this: &Rc<RefCell<Node>>|{
-    // println!("reached id: {}, is_end: {}",this.borrow().id,this.borrow().is_end);
-    // indexer.insert(this.borrow().id,Rc::new(RefCell::new(Node::new_with_end(this.borrow().is_end,alloc))));
-    // },&mut HashSet::new());
-    //
-    // let mut count = 0;
-    // graph.start.traverse(&mut |this: &Rc<RefCell<Node>>|{
-    // for (condition, successors) in &this.borrow().successors{
-    // for successor in successors{
-    // println!("edge ({:?}) -> {}", condition, successor.borrow().id);
-    // match condition{
-    // &Some(c) => {
-    // (*indexer[&this.borrow().id]).borrow_mut()
-    // .successors.entry(Some(c)).or_insert(vec![])
-    // .push(indexer[&successor.borrow().id].clone());
-    // }
-    // &None => {
-    // let mut joined_successors: HashMap<Option<char>,Vec<Rc<RefCell<Node>>>> = HashMap::new();
-    // {
-    // let joined_mut = joined_successors.borrow_mut();
-    // for (c,succs) in &indexer[&successor.borrow().id].borrow().successors{
-    // for succ in succs{
-    // joined_mut.entry(*c).or_insert(vec![]).push(succ.clone());
-    // }
-    // }
-    // }
-    // (*indexer[&this.borrow().id]).borrow_mut().successors.extend(joined_successors);
-    // if indexer[&successor.borrow().id].borrow().is_end {
-    // (*indexer[&this.borrow().id]).borrow_mut().is_end = true;
-    // }
-    // indexer.get_mut(&successor.borrow().id).unwrap() = indexer[&this.borrow().id].clone();
-    // }
-    // }
-    // }
-    // }
-    // count += 1;
-    // println!("iter{} reached",count);
-    // use std::fs::File;
-    // use std::io::Write;
-    // indexer[&graph.start.borrow().id].borrow().dotty_print(&mut File::create(format!("iter{}.dot",count)).unwrap());
-    // },&mut HashSet::new());
-    //
-    // indexer[&graph.start.borrow().id].clone()
+    // let mut new_edges: BTreeSet<Edge> = graph.edges.iter().filter(|edge| edge.condition.is_some()).collect();
+
+    let mut ret = Graph::new(graph.start);
+
+    graph.traverse_node(&mut |node| {
+                            let through_epsilon =
+                                reachable_through_epsilon(&successors_through_epsilon,
+                                                          node,
+                                                          &mut HashSet::new());
+                            println!("{} -> {:?}", node.id, through_epsilon);
+
+                            for another_start in &through_epsilon {
+                                if let Some(edges) =
+                                       successors_through_non_epsilon.get(another_start) {
+                                    for &(c, to) in edges {
+                                        ret.edges.insert(Edge {
+                                            condition: Some(c),
+                                            from: *node,
+                                            to: to,
+                                        });
+                                    }
+                                }
+                            }
+                        },
+                        &graph.start,
+                        &mut HashSet::new());
+
+    ret
 }
