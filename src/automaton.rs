@@ -28,13 +28,14 @@ impl Node {
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Clone)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Debug)]
 pub struct Edge {
     condition: Option<char>,
     from: Node,
     to: Node,
 }
 
+#[derive(Debug)]
 pub struct Graph {
     start: Node,
     edges: BTreeSet<Edge>,
@@ -154,6 +155,9 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
             let rhs = build_nfa(&rhs, alloc);
             let start = Node::new(alloc);
             let end = Node::new(alloc);
+            println!("start -> {}",start.id);
+            println!("lhs.start -> {}",lhs.start.id);
+            println!("rhs.start -> {}",rhs.start.id);
 
             let mut graph = Graph::new(start);
             graph.acceptors = [end].iter().map(|node| *node).collect();
@@ -300,6 +304,5 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
                         },
                         &graph.start,
                         &mut HashSet::new());
-
     ret
 }
