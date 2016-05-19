@@ -44,10 +44,14 @@ fn paren<T: Iterator<Item = char>>(input: &mut T) -> Result<RegExpr, ParseError>
                 if level == 0 {
                     break;
                 } else {
-                    level -= 1
+                    level -= 1;
+                    buffer.push(')');
                 }
             }
-            Some('(') => level += 1,
+            Some('(') => {
+                level += 1;
+                buffer.push('(');
+            },
             Some(c) => buffer.push(c),
             None => return Err(ParseError),
         }
