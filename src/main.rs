@@ -8,7 +8,7 @@ use automaton::merge_by_epsilon;
 
 fn main() {
     use std::fs::File;
-    let input = "d((ba)|(bc))e".to_owned();
+    let input = "d((ba)|(bc))*e".to_owned();
     let expression = parse(&mut input.chars());
 
     println!("{:?}",expression);

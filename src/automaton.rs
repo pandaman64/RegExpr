@@ -263,6 +263,8 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
     let mut successors_through_epsilon: HashMap<Node, HashSet<Node>> = HashMap::new();
     let mut successors_through_non_epsilon: HashMap<Node, HashSet<(char, Node)>> = HashMap::new();
 
+    let mut ret = Graph::new(graph.start);
+
     for edge in &graph.edges {
         match edge.condition {
             None => {
@@ -274,13 +276,12 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
                 successors_through_non_epsilon.entry(edge.from)
                                               .or_insert(HashSet::new())
                                               .insert((c, edge.to));
+                ret.edges.insert(edge.clone());
             }
         }
     }
 
     // let mut new_edges: BTreeSet<Edge> = graph.edges.iter().filter(|edge| edge.condition.is_some()).collect();
-
-    let mut ret = Graph::new(graph.start);
 
     graph.traverse_node(&mut |node| {
                             let through_epsilon =
