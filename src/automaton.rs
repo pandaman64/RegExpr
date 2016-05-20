@@ -133,21 +133,45 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
             graph.acceptors.insert(end);
             graph
         }
-        RegExpr::Sequence(ref car, ref cdr) => {
-            let mut car = build_nfa(&car, alloc);
-            let cdr = build_nfa(&cdr, alloc);
-            car.edges.extend(car.acceptors.iter().map(|acceptor| {
-                Edge {
-                    condition: None,
-                    from: acceptor.clone(),
-                    to: cdr.start,
-                }
-            }));
-            Graph {
-                start: car.start,
-                edges: car.edges.union(&cdr.edges).cloned().collect(),
-                acceptors: cdr.acceptors,
+        RegExpr::Sequence(ref v) => {
+            let start = Node::new(alloc);
+            let nfas: Vec<Graph>;
+            {
+                nfas = v.iter().map(|e| build_nfa(e, alloc)).collect();
             }
+            let end = Node::new(alloc);
+
+            let mut current_end: HashSet<Node> = [start].iter().cloned().collect();
+            let mut ret = Graph::new(start);
+
+            for nfa in nfas {
+                ret.edges.extend(nfa.edges);
+                for acceptor in current_end {
+                    ret.add_edge(None, acceptor, nfa.start);
+                }
+                current_end = nfa.acceptors;
+            }
+
+            for acceptor in current_end {
+                ret.add_edge(None, acceptor, end)
+            }
+            ret.acceptors.insert(end);
+            ret
+            // let mut car = build_nfa(&car, alloc);
+            // let cdr = build_nfa(&cdr, alloc);
+            // car.edges.extend(car.acceptors.iter().map(|acceptor| {
+            // Edge {
+            // condition: None,
+            // from: acceptor.clone(),
+            // to: cdr.start,
+            // }
+            // }));
+            // Graph {
+            // start: car.start,
+            // edges: car.edges.union(&cdr.edges).cloned().collect(),
+            // acceptors: cdr.acceptors,
+            // }
+            //
         }
         RegExpr::Branch(ref lhs, ref rhs) => {
             use std::iter::Iterator;
@@ -155,9 +179,9 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
             let rhs = build_nfa(&rhs, alloc);
             let start = Node::new(alloc);
             let end = Node::new(alloc);
-            println!("start -> {}",start.id);
-            println!("lhs.start -> {}",lhs.start.id);
-            println!("rhs.start -> {}",rhs.start.id);
+            println!("start -> {}", start.id);
+            println!("lhs.start -> {}", lhs.start.id);
+            println!("rhs.start -> {}", rhs.start.id);
 
             let mut graph = Graph::new(start);
             graph.acceptors = [end].iter().map(|node| *node).collect();
@@ -280,8 +304,6 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
             }
         }
     }
-
-    // let mut new_edges: BTreeSet<Edge> = graph.edges.iter().filter(|edge| edge.condition.is_some()).collect();
 
     graph.traverse_node(&mut |node| {
                             let through_epsilon =

@@ -8,10 +8,10 @@ use automaton::merge_by_epsilon;
 
 fn main() {
     use std::fs::File;
-    let input = "d((ba)|(bc))*e".to_owned();
+    let input = "a(b*c|bd)*e".to_owned();
     let expression = parse(&mut input.chars());
 
-    println!("{:?}",expression);
+    println!("{:?}", expression);
 
     let mut alloc = NodeAllocator::new();
     let nfa = build_nfa(&expression.unwrap(), &mut alloc);
