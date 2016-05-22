@@ -42,18 +42,98 @@ pub struct Graph {
     acceptors: HashSet<Node>,
 }
 
+struct PowerSet{
+    all_nodes: BTreeSet<Node>,
+    current: Vec<Node>
+}
+
+fn power_set(nodes: BTreeSet<Node>) -> PowerSet{
+    PowerSet{ all_nodes: nodes, current: vec![] }
+}
+
+impl PowerSet{
+    fn min_node(&self) -> Node{
+        *self.all_nodes.iter().next().unwrap()
+    }
+
+    fn max_node(&self) -> Node{
+        *self.all_nodes.iter().last().unwrap()
+    }
+
+    fn next_node(&self,node: &Node) -> Node{
+        *self.all_nodes.iter().skip_while(|n| *n <= node).next().unwrap()
+    }
+}
+
+impl Iterator for PowerSet{
+    type Item = HashSet<Node>;
+
+    fn next(&mut self) -> Option<HashSet<Node>>{
+       if self.current.is_empty(){
+           self.current = vec![self.min_node()];
+           return Some(self.current.iter().cloned().collect());
+       }
+
+       let mut next = self.current.clone();
+
+       for (idx,node) in self.current.iter().enumerate(){
+            if *node != self.max_node(){
+                next[idx] = self.next_node(&node);
+                break;
+            }
+            else{
+                next[idx] = self.min_node();
+                if next.len() < self.all_nodes.len(){
+                    next.push(self.min_node());
+                    break;
+                }
+                else{
+                    return None;
+                }
+            }
+       }
+
+       self.current = next;
+
+       Some(self.current.iter().cloned().collect())
+    }
+}
+
 pub struct DFAAllocator{
-    nodes: HashMap<usize,HashSet<DFANode>>,
+    nodes: HashMap<DFANode,HashSet<Node>>,
 //    edges: HashMap<usize,HashSet<DFAEdge>>
 }
 
-#[derive(Debug,PartialEq,Eq,Hash)]
+impl DFAAllocator{
+    pub fn new() -> DFAAllocator{
+        DFAAllocator{ nodes: HashMap::new() }
+    }
+
+    fn new_node(&mut self,nodes: HashSet<Node>) -> DFANode{
+        if let Some((node,_)) = self.nodes.iter().find(|&(_,v)| *v == nodes){
+            return *node;
+        }
+        let len = self.nodes.len();
+        let node = DFANode{ id: len };
+        self.nodes.insert(node,nodes);
+        node
+    }
+
+    fn pretty_name(&self, node: &DFANode) -> String{
+        self.nodes[node].iter().map(|node| format!("{}",node.id)).collect::<Vec<_>>().join(",")
+    }
+}
+
+#[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
 pub struct DFANode{
-    ids: usize
+    id: usize
 }
 
 #[derive(Debug,Hash,PartialEq,Eq)]
 pub struct DFAEdge{
+    condition: char,
+    from: DFANode,
+    to: DFANode
 }
 
 #[derive(Debug)]
@@ -61,6 +141,22 @@ pub struct DFA{
     start: DFANode,
     edges: HashSet<DFAEdge>,
     acceptors: HashSet<DFANode>
+}
+
+impl DFA{
+    pub fn dotty_print<W: Write + ?Sized>(&self, alloc: &DFAAllocator, writer: &mut W){
+        writeln!(writer, "digraph g{{").unwrap();
+
+        for acceptor in &self.acceptors {
+            writeln!(writer, "{} [ style = \"bold\" ];", alloc.pretty_name(acceptor)).unwrap();
+        }
+
+        for edge in &self.edges{
+            writeln!(writer,"\t{} -> {} [ label = \"{}\" ];",alloc.pretty_name(&edge.from),alloc.pretty_name(&edge.to),edge.condition).unwrap();
+        }
+        
+        writeln!(writer, "}}").unwrap();
+    }
 }
 
 impl Graph {
@@ -304,7 +400,7 @@ fn reachable_through_epsilon(through_epsilon: &HashMap<Node, HashSet<Node>>,
     }
 }
 
-pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
+pub fn merge_by_epsilon(graph: &Graph, _: &mut NodeAllocator) -> Graph {
     let mut successors_through_epsilon: HashMap<Node, HashSet<Node>> = HashMap::new();
     let mut successors_through_non_epsilon: HashMap<Node, HashSet<(char, Node)>> = HashMap::new();
 
@@ -357,4 +453,56 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
                         &graph.start,
                         &mut HashSet::new());
     ret
+}
+
+
+fn succeeding_subsets(start: HashSet<Node>,edges: &BTreeSet<Edge>,all_nodes: BTreeSet<Node>,alloc: &mut DFAAllocator) -> HashMap<char,HashSet<DFANode>>{
+    let mut subsets: HashMap<char,HashSet<DFANode>> = HashMap::new();
+
+    for edge in edges{
+        if start.contains(&edge.from){
+            subsets.entry(edge.condition.unwrap()).or_insert(HashSet::new()).extend(power_set(all_nodes.clone()).filter(|nodes| nodes.contains(&edge.to)).map(|nodes| alloc.new_node(nodes)));
+        }
+    }
+   
+    subsets
+}
+
+pub fn build_dfa(graph: &Graph, alloc: &mut DFAAllocator) -> DFA{
+    let all_nodes: HashSet<Node>;
+    {
+        let mut all_nodes_mut = HashSet::new();
+        for edge in &graph.edges{
+            all_nodes_mut.insert(edge.from);
+            all_nodes_mut.insert(edge.to);
+        }
+        all_nodes = all_nodes_mut;
+    }
+
+    let start = alloc.new_node([graph.start].iter().cloned().collect());
+    let mut visited: HashSet<DFANode> = HashSet::new();
+    let mut queue: HashSet<DFANode> = [start].iter().cloned().collect();
+
+    let mut dfa = DFA{ start: start, edges: HashSet::new(), acceptors: HashSet::new() };
+
+    while !queue.is_empty(){
+        let successor_map = succeeding_subsets(alloc.nodes[&start].clone(),&graph.edges,all_nodes.iter().cloned().collect(),alloc);
+        let mut new_queue = HashSet::new();
+
+        for (c,successors) in &successor_map{
+            for successor in successors{
+                dfa.edges.insert(DFAEdge{ condition:*c, from: start, to:*successor });
+                if !visited.contains(&successor){
+                    new_queue.insert(*successor);
+                    visited.insert(*successor);
+                }
+            }
+        }
+    
+        queue = new_queue;
+    }
+
+    //TODO: add acceptors
+
+    dfa
 }
