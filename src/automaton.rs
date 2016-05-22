@@ -42,6 +42,27 @@ pub struct Graph {
     acceptors: HashSet<Node>,
 }
 
+pub struct DFAAllocator{
+    nodes: HashMap<usize,HashSet<DFANode>>,
+//    edges: HashMap<usize,HashSet<DFAEdge>>
+}
+
+#[derive(Debug,PartialEq,Eq,Hash)]
+pub struct DFANode{
+    ids: usize
+}
+
+#[derive(Debug,Hash,PartialEq,Eq)]
+pub struct DFAEdge{
+}
+
+#[derive(Debug)]
+pub struct DFA{
+    start: DFANode,
+    edges: HashSet<DFAEdge>,
+    acceptors: HashSet<DFANode>
+}
+
 impl Graph {
     fn new(start: Node) -> Graph {
         Graph {
@@ -323,6 +344,14 @@ pub fn merge_by_epsilon(graph: &Graph, alloc: &mut NodeAllocator) -> Graph {
                                         });
                                     }
                                 }
+                                if graph.acceptors.contains(another_start){
+                                    ret.acceptors.insert(*node);
+                                }
+                            }
+
+                            if graph.acceptors.contains(node){
+                                ret.acceptors.insert(*node);
+                                ret.acceptors.extend(through_epsilon);
                             }
                         },
                         &graph.start,
