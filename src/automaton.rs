@@ -39,122 +39,71 @@ pub struct Edge {
 pub struct Graph {
     start: Node,
     edges: BTreeSet<Edge>,
-    acceptors: HashSet<Node>,
+    acceptors: BTreeSet<Node>,
 }
 
-struct PowerSet{
-    all_nodes: BTreeSet<Node>,
-    current: Vec<Node>
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord,Clone)]
+pub struct DFANode {
+    nodes: BTreeSet<Node>,
+    is_acceptor: bool,
 }
-
-fn power_set(nodes: BTreeSet<Node>) -> PowerSet{
-    PowerSet{ all_nodes: nodes, current: vec![] }
-}
-
-impl PowerSet{
-    fn min_node(&self) -> Node{
-        *self.all_nodes.iter().next().unwrap()
-    }
-
-    fn max_node(&self) -> Node{
-        *self.all_nodes.iter().last().unwrap()
-    }
-
-    fn next_node(&self,node: &Node) -> Node{
-        *self.all_nodes.iter().skip_while(|n| *n <= node).next().unwrap()
-    }
-}
-
-impl Iterator for PowerSet{
-    type Item = HashSet<Node>;
-
-    fn next(&mut self) -> Option<HashSet<Node>>{
-       if self.current.is_empty(){
-           self.current = vec![self.min_node()];
-           return Some(self.current.iter().cloned().collect());
-       }
-
-       let mut next = self.current.clone();
-
-       for (idx,node) in self.current.iter().enumerate(){
-            if *node != self.max_node(){
-                next[idx] = self.next_node(&node);
-                break;
-            }
-            else{
-                next[idx] = self.min_node();
-                if next.len() < self.all_nodes.len(){
-                    next.push(self.min_node());
-                    break;
-                }
-                else{
-                    return None;
-                }
-            }
-       }
-
-       self.current = next;
-
-       Some(self.current.iter().cloned().collect())
-    }
-}
-
-pub struct DFAAllocator{
-    nodes: HashMap<DFANode,HashSet<Node>>,
-//    edges: HashMap<usize,HashSet<DFAEdge>>
-}
-
-impl DFAAllocator{
-    pub fn new() -> DFAAllocator{
-        DFAAllocator{ nodes: HashMap::new() }
-    }
-
-    fn new_node(&mut self,nodes: HashSet<Node>) -> DFANode{
-        if let Some((node,_)) = self.nodes.iter().find(|&(_,v)| *v == nodes){
-            return *node;
+impl DFANode {
+    fn new(nodes: BTreeSet<Node>, graph: &Graph) -> DFANode {
+        let is_acceptor = nodes.intersection(&graph.acceptors).next().is_some();
+        DFANode {
+            nodes: nodes,
+            is_acceptor: is_acceptor,
         }
-        let len = self.nodes.len();
-        let node = DFANode{ id: len };
-        self.nodes.insert(node,nodes);
-        node
     }
 
-    fn pretty_name(&self, node: &DFANode) -> String{
-        format!("\"{{ {} }}\"", self.nodes[node].iter().map(|node| format!("{}",node.id)).collect::<Vec<_>>().join(","))
+    fn pretty_name(&self) -> String {
+        format!("\"{{ {} }}\"",
+                self.nodes.iter().map(|node| format!("{}", node.id)).collect::<Vec<_>>().join(","))
     }
 }
 
-#[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
-pub struct DFANode{
-    id: usize
-}
-
-#[derive(Debug,Hash,PartialEq,Eq)]
-pub struct DFAEdge{
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord)]
+pub struct DFAEdge {
     condition: char,
     from: DFANode,
-    to: DFANode
+    to: DFANode,
 }
 
 #[derive(Debug)]
-pub struct DFA{
+pub struct DFA {
     start: DFANode,
-    edges: HashSet<DFAEdge>,
-    acceptors: HashSet<DFANode>
+    edges: BTreeSet<DFAEdge>,
 }
 
-impl DFA{
-    pub fn dotty_print<W: Write + ?Sized>(&self, alloc: &DFAAllocator, writer: &mut W){
+impl DFA {
+    fn new(start: DFANode) -> DFA {
+        DFA {
+            start: start,
+            edges: BTreeSet::new(),
+        }
+    }
+
+    pub fn dotty_print<W: Write + ?Sized>(&self, writer: &mut W) {
         writeln!(writer, "digraph g{{").unwrap();
 
-        for acceptor in &self.acceptors {
-            writeln!(writer, "{} [ style = \"bold\" ];", alloc.pretty_name(acceptor)).unwrap();
+        for edge in &self.edges {
+            writeln!(writer,
+                     "\t{} -> {} [ label = \"{}\" ];",
+                     edge.from.pretty_name(),
+                     edge.to.pretty_name(),
+                     edge.condition)
+                .unwrap();
+            if edge.from.is_acceptor {
+                writeln!(writer,
+                         "\t{} [ style = \"bold\" ];",
+                         edge.from.pretty_name())
+                    .unwrap();
+            }
+            if edge.to.is_acceptor {
+                writeln!(writer, "\t{} [ style = \"bold\" ];", edge.to.pretty_name()).unwrap();
+            }
         }
 
-        for edge in &self.edges{
-            writeln!(writer,"\t{} -> {} [ label = \"{}\" ];",alloc.pretty_name(&edge.from),alloc.pretty_name(&edge.to),edge.condition).unwrap();
-        }
-        
         writeln!(writer, "}}").unwrap();
     }
 }
@@ -164,7 +113,7 @@ impl Graph {
         Graph {
             start: start,
             edges: BTreeSet::new(),
-            acceptors: HashSet::new(),
+            acceptors: BTreeSet::new(),
         }
     }
 
@@ -221,23 +170,23 @@ impl Graph {
             self.traverse(f, &edge.to, visited);
         }
     }
-
-    fn traverse_node<F: FnMut(&Node)>(&self,
-                                      f: &mut F,
-                                      current: &Node,
-                                      visited: &mut HashSet<Node>) {
-        if visited.contains(current) {
-            return;
-        }
-
-        visited.insert(*current);
-
-        f(current);
-
-        for edge in self.edges.iter().filter(|edge| edge.from == *current) {
-            self.traverse_node(f, &edge.to, visited);
-        }
-    }
+    // fn traverse_node<F: FnMut(&Node)>(&self,
+    // f: &mut F,
+    // current: &Node,
+    // visited: &mut HashSet<Node>) {
+    // if visited.contains(current) {
+    // return;
+    // }
+    //
+    // visited.insert(*current);
+    //
+    // f(current);
+    //
+    // for edge in self.edges.iter().filter(|edge| edge.from == *current) {
+    // self.traverse_node(f, &edge.to, visited);
+    // }
+    // }
+    //
 }
 
 pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
@@ -258,7 +207,7 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
             }
             let end = Node::new(alloc);
 
-            let mut current_end: HashSet<Node> = [start].iter().cloned().collect();
+            let mut current_end: BTreeSet<Node> = [start].iter().cloned().collect();
             let mut ret = Graph::new(start);
 
             for nfa in nfas {
@@ -377,132 +326,76 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
     }
 }
 
-fn reachable_through_epsilon(through_epsilon: &HashMap<Node, HashSet<Node>>,
-                             current: &Node,
-                             visited: &mut HashSet<Node>)
-                             -> HashSet<Node> {
-    if visited.contains(current) {
-        return HashSet::new();
+fn reachable_through_epsilon(graph: &Graph, nodes: &BTreeSet<Node>) -> BTreeSet<Node> {
+    let mut ret: BTreeSet<Node> = nodes.clone();
+    for node in nodes {
+        graph.traverse(&mut |edge| {
+                           if edge.condition.is_none() && ret.contains(&edge.from) {
+                               ret.insert(edge.to);
+                           }
+                       },
+                       &node,
+                       &mut HashSet::new());
     }
-
-    visited.insert(*current);
-
-    if let Some(nodes) = through_epsilon.get(current) {
-        let mut accumulator: HashSet<Node> = nodes.clone();
-        for to in nodes.iter() {
-            let extension = reachable_through_epsilon(through_epsilon, to, visited);
-            accumulator.extend(extension);
-        }
-
-        accumulator
-    } else {
-        HashSet::new()
-    }
-}
-
-pub fn merge_by_epsilon(graph: &Graph, _: &mut NodeAllocator) -> Graph {
-    let mut successors_through_epsilon: HashMap<Node, HashSet<Node>> = HashMap::new();
-    let mut successors_through_non_epsilon: HashMap<Node, HashSet<(char, Node)>> = HashMap::new();
-
-    let mut ret = Graph::new(graph.start);
-
-    for edge in &graph.edges {
-        match edge.condition {
-            None => {
-                successors_through_epsilon.entry(edge.from)
-                                          .or_insert(HashSet::new())
-                                          .insert(edge.to);
-            }
-            Some(c) => {
-                successors_through_non_epsilon.entry(edge.from)
-                                              .or_insert(HashSet::new())
-                                              .insert((c, edge.to));
-                ret.edges.insert(edge.clone());
-            }
-        }
-    }
-
-    graph.traverse_node(&mut |node| {
-                            let through_epsilon =
-                                reachable_through_epsilon(&successors_through_epsilon,
-                                                          node,
-                                                          &mut HashSet::new());
-                            println!("{} -> {:?}", node.id, through_epsilon);
-
-                            for another_start in &through_epsilon {
-                                if let Some(edges) =
-                                       successors_through_non_epsilon.get(another_start) {
-                                    for &(c, to) in edges {
-                                        ret.edges.insert(Edge {
-                                            condition: Some(c),
-                                            from: *node,
-                                            to: to,
-                                        });
-                                    }
-                                }
-                                if graph.acceptors.contains(another_start){
-                                    ret.acceptors.insert(*node);
-                                }
-                            }
-
-                            if graph.acceptors.contains(node){
-                                ret.acceptors.insert(*node);
-                                ret.acceptors.extend(through_epsilon);
-                            }
-                        },
-                        &graph.start,
-                        &mut HashSet::new());
     ret
 }
 
-
-fn succeeding_subsets(start: HashSet<Node>,edges: &BTreeSet<Edge>,all_nodes: BTreeSet<Node>,alloc: &mut DFAAllocator) -> HashMap<char,HashSet<DFANode>>{
-    let mut subsets: HashMap<char,HashSet<DFANode>> = HashMap::new();
-
-    for edge in edges{
-        if start.contains(&edge.from){
-            subsets.entry(edge.condition.unwrap()).or_insert(HashSet::new()).extend(power_set(all_nodes.clone()).filter(|nodes| nodes.contains(&edge.to)).map(|nodes| alloc.new_node(nodes)));
-        }
-    }
-   
-    subsets
-}
-
-pub fn build_dfa(graph: &Graph, alloc: &mut DFAAllocator) -> DFA{
-    let all_nodes: HashSet<Node>;
-    {
-        let mut all_nodes_mut = HashSet::new();
-        for edge in &graph.edges{
-            all_nodes_mut.insert(edge.from);
-            all_nodes_mut.insert(edge.to);
-        }
-        all_nodes = all_nodes_mut;
-    }
-
-    let start = alloc.new_node([graph.start].iter().cloned().collect());
-    let mut visited: HashSet<DFANode> = HashSet::new();
-    let mut queue: HashSet<DFANode> = [start].iter().cloned().collect();
-
-    let mut dfa = DFA{ start: start, edges: HashSet::new(), acceptors: HashSet::new() };
-
-    while !queue.is_empty(){
-        let successor_map = succeeding_subsets(alloc.nodes[&start].clone(),&graph.edges,all_nodes.iter().cloned().collect(),alloc);
-        let mut new_queue = HashSet::new();
-
-        for (c,successors) in &successor_map{
-            for successor in successors{
-                dfa.edges.insert(DFAEdge{ condition:*c, from: start, to:*successor });
-                if !visited.contains(&successor){
-                    new_queue.insert(*successor);
-                    visited.insert(*successor);
+pub fn build_dfa(graph: &Graph) -> DFA {
+    let mut target = DFANode::new(reachable_through_epsilon(graph,
+                                                            &[graph.start]
+                                                                 .iter()
+                                                                 .cloned()
+                                                                 .collect()),
+                                  graph);
+    let mut ret: DFA = DFA::new(target.clone());
+    let mut dfa_nodes: BTreeSet<DFANode> = BTreeSet::new();
+    dfa_nodes.insert(target.clone());
+    let mut processed_nodes: BTreeSet<DFANode> = BTreeSet::new();
+    loop {
+        println!("target: {:?}", target);
+        let mut successors: HashMap<char, BTreeSet<Node>> = HashMap::new();
+        for &Edge { from: _, to, condition } in graph.edges.iter().filter(|edge| {
+            target.nodes.contains(&edge.from)
+        }) {
+            match condition {
+                Some(c) => {
+                    successors.entry(c).or_insert(BTreeSet::new()).insert(to);
                 }
+                None => {}
             }
         }
-    
-        queue = new_queue;
+        {
+            successors = successors.iter()
+                                   .map(|(c, nodes)| {
+                                       (*c, reachable_through_epsilon(graph, &nodes))
+                                   })
+                                   .collect();
+        }
+        println!("succs: {:?}", successors);
+        for (c, successor) in successors {
+            let node = DFANode::new(successor, graph);
+            if !processed_nodes.contains(&node) && !dfa_nodes.contains(&node) {
+                dfa_nodes.insert(node.clone());
+            }
+            ret.edges.insert(DFAEdge {
+                condition: c,
+                from: target.clone(),
+                to: node,
+            });
+        }
+        dfa_nodes.remove(&target);
+        processed_nodes.insert(target);
+        println!("processed: {:?}", processed_nodes);
+        println!("not processed: {:?}", dfa_nodes);
+        match dfa_nodes.iter().next() {
+            Some(node) => {
+                target = node.clone();
+            }
+            None => {
+                println!("no set remain");
+                break;
+            }
+        }
     }
-
-    //TODO: add acceptors
-
-    dfa
+    ret
 }
