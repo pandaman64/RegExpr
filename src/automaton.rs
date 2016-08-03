@@ -120,7 +120,7 @@ impl DFAAllocator{
     }
 
     fn pretty_name(&self, node: &DFANode) -> String{
-        self.nodes[node].iter().map(|node| format!("{}",node.id)).collect::<Vec<_>>().join(",")
+        format!("\"{{ {} }}\"", self.nodes[node].iter().map(|node| format!("{}",node.id)).collect::<Vec<_>>().join(","))
     }
 }
 
