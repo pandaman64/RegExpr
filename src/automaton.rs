@@ -44,8 +44,8 @@ pub struct Graph {
 
 #[derive(Debug,PartialEq,Eq,PartialOrd,Ord,Clone)]
 pub struct DFANode {
-    nodes: BTreeSet<Node>,
-    is_acceptor: bool,
+    pub nodes: BTreeSet<Node>,
+    pub is_acceptor: bool,
 }
 impl DFANode {
     fn new(nodes: BTreeSet<Node>, graph: &Graph) -> DFANode {
@@ -64,15 +64,15 @@ impl DFANode {
 
 #[derive(Debug,PartialEq,Eq,PartialOrd,Ord)]
 pub struct DFAEdge {
-    condition: char,
-    from: DFANode,
-    to: DFANode,
+    pub condition: char,
+    pub from: DFANode,
+    pub to: DFANode,
 }
 
 #[derive(Debug)]
 pub struct DFA {
-    start: DFANode,
-    edges: BTreeSet<DFAEdge>,
+    pub start: DFANode,
+    pub edges: BTreeSet<DFAEdge>,
 }
 
 impl DFA {

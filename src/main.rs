@@ -6,9 +6,12 @@ use automaton::NodeAllocator;
 use automaton::build_nfa;
 use automaton::build_dfa;
 
+mod engine;
+use engine::Engine;
+
 fn main() {
     use std::fs::File;
-    let input = "(a|b)*cde".to_owned();
+    let input = "(aa|b)*".to_owned();
     let expression = parse(&mut input.chars());
 
     println!("{:?}", expression);
@@ -20,4 +23,7 @@ fn main() {
 
     let dfa = build_dfa(&nfa);
     dfa.dotty_print(&mut File::create("dfa.dot").unwrap());
+
+    let engine = Engine::new(dfa);
+    println!("{}",engine.match_string("aabaabaabbbaabbaabaabbaabbaabaabaabaa"));
 }
