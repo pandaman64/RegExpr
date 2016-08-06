@@ -11,7 +11,7 @@ use engine::Engine;
 
 fn main() {
     use std::fs::File;
-    let input = "(aa|b)*".to_owned();
+    let input = "(Trick)|(Treat)".to_owned();
     let expression = parse(&mut input.chars());
 
     println!("{:?}", expression);
@@ -25,5 +25,5 @@ fn main() {
     dfa.dotty_print(&mut File::create("dfa.dot").unwrap());
 
     let engine = Engine::new(dfa);
-    println!("{}",engine.match_string("aabaabaabbbaabbaabaabbaabbaabaabaabaa"));
+    println!("{}",engine.match_string("Trick"));
 }

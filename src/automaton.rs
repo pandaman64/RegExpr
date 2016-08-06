@@ -245,9 +245,6 @@ pub fn build_nfa(expr: &RegExpr, alloc: &mut NodeAllocator) -> Graph {
             let rhs = build_nfa(&rhs, alloc);
             let start = Node::new(alloc);
             let end = Node::new(alloc);
-            println!("start -> {}", start.id);
-            println!("lhs.start -> {}", lhs.start.id);
-            println!("rhs.start -> {}", rhs.start.id);
 
             let mut graph = Graph::new(start);
             graph.acceptors = [end].iter().map(|node| *node).collect();
@@ -352,7 +349,6 @@ pub fn build_dfa(graph: &Graph) -> DFA {
     dfa_nodes.insert(target.clone());
     let mut processed_nodes: BTreeSet<DFANode> = BTreeSet::new();
     loop {
-        println!("target: {:?}", target);
         let mut successors: HashMap<char, BTreeSet<Node>> = HashMap::new();
         for &Edge { from: _, to, condition } in graph.edges.iter().filter(|edge| {
             target.nodes.contains(&edge.from)
@@ -371,7 +367,6 @@ pub fn build_dfa(graph: &Graph) -> DFA {
                                    })
                                    .collect();
         }
-        println!("succs: {:?}", successors);
         for (c, successor) in successors {
             let node = DFANode::new(successor, graph);
             if !processed_nodes.contains(&node) && !dfa_nodes.contains(&node) {
@@ -385,14 +380,11 @@ pub fn build_dfa(graph: &Graph) -> DFA {
         }
         dfa_nodes.remove(&target);
         processed_nodes.insert(target);
-        println!("processed: {:?}", processed_nodes);
-        println!("not processed: {:?}", dfa_nodes);
         match dfa_nodes.iter().next() {
             Some(node) => {
                 target = node.clone();
             }
             None => {
-                println!("no set remain");
                 break;
             }
         }
